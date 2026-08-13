@@ -37,12 +37,12 @@ const MEDIAPIPE_WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision
 const MODEL_URLS = {
   hand: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
 };
-const YOLO_CONFIDENCE_THRESHOLD = 0.75;
+const YOLO_CONFIDENCE_THRESHOLD = 0.65; // changed from .75 to .65
 const YOLO_REQUEST_INTERVAL_MS = 180;
 const DISPLAY_FRAME_MIRRORED = true;
 const AI_INPUT_MIRRORED = false;
 const ROI_PADDING = 0.45;
-const SUPPORTED_SIGNS = ["Anda", "Apa", "Berhenti", "Bodoh", "Cantik", "Halo", "Hati-hati", "Lelah", "Maaf", "Makan", "Mau", "Membaca", "Nama", "Sama-sama", "Saya", "Siapa", "Sombong", "Takut", "Terima kasih"];
+const SUPPORTED_SIGNS = ["A", "Anda", "Apa", "B", "Berhenti", "Bodoh", "C", "Cantik", "D", "E", "F", "G", "H", "Halo", "Hati-hati", "I", "J", "K", "L","Lelah", "M", "Maaf", "Makan", "Mau", "Membaca", "N", "Nama", "O", "P", "Q", "R", "S", "Sama-sama", "Saya", "Siapa", "Sombong", "T", "Takut", "Terima kasih", "U", "V", "W", "X", "Y", "Z"];
 
 let handLandmarker;
 let stream;
@@ -301,56 +301,35 @@ function cameraFrameBlob(roi) {
 async function predictCameraFrame(timestamp) {
   if (predictionInFlight || timestamp - lastPredictionRequestTime < YOLO_REQUEST_INTERVAL_MS) return;
   lastPredictionRequestTime = timestamp;
-  const handResults = localizeHands(timestamp);
-  const rois = handCandidates(handResults);
-  if (!rois.length) {
-    frameCounter += 1;
-    handlePrediction({
-      status: "no_hand",
-      detected: false,
-      reason: "no_hand",
-      display_text: "Tangan belum terdeteksi",
-      confidence: null,
-      raw_predictions: [],
-      hands_detected: 0,
-      handedness: [],
-      image_width: camera.videoWidth,
-      image_height: camera.videoHeight,
-      frame_id: String(frameCounter),
-      mirrored: AI_INPUT_MIRRORED,
-    });
-    return;
-  }
   predictionInFlight = true;
-  const blobs = await Promise.all(rois.map((roi) => cameraFrameBlob(roi)));
-  const candidateFrames = rois
-    .map((roi, index) => ({ roi, blob: blobs[index] }))
-    .filter((candidate) => candidate.blob);
-  if (!candidateFrames.length) {
-    predictionInFlight = false;
-    return;
-  }
-  const formData = new FormData();
   frameCounter += 1;
-  candidateFrames.forEach((candidate) => {
-    formData.append("candidates", candidate.blob, `${candidate.roi.type}-candidate.jpg`);
-  });
-  formData.append("frame_id", String(frameCounter));
-  formData.append("mirrored", String(AI_INPUT_MIRRORED));
-  formData.append("source_width", String(candidateFrames[0].roi.sourceWidth));
-  formData.append("source_height", String(candidateFrames[0].roi.sourceHeight));
-  formData.append("hands_detected", String(candidateFrames[0].roi.handsDetected));
-  formData.append("handedness", candidateFrames[0].roi.handedness.join(","));
-  formData.append("candidates_json", JSON.stringify(candidateFrames.map((candidate) => ({
-    type: candidate.roi.type,
-    x1: candidate.roi.x1,
-    y1: candidate.roi.y1,
-    x2: candidate.roi.x2,
-    y2: candidate.roi.y2,
-    source_width: candidate.roi.sourceWidth,
-    source_height: candidate.roi.sourceHeight,
-  }))));
+
+  const fullRoi = {
+    x1: 0,
+    y1: 0,
+    x2: camera.videoWidth,
+    y2: camera.videoHeight,
+    type: "full",
+    sourceWidth: camera.videoWidth,
+    sourceHeight: camera.videoHeight,
+    handsDetected: 0,
+    handedness: []
+  };
+
   try {
+    const fullFrameBlob = await cameraFrameBlob(fullRoi);
+    if (!fullFrameBlob) {
+      predictionInFlight = false;
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("image", fullFrameBlob, "frame.jpg");
+    formData.append("frame_id", String(frameCounter));
+    formData.append("mirrored", String(AI_INPUT_MIRRORED));
+    formData.append("source_width", String(camera.videoWidth));
+    formData.append("source_height", String(camera.videoHeight));
+
     const response = await fetch("/api/translator/predict-sign/", {
       method: "POST",
       headers: { "X-CSRFToken": csrfToken() },
@@ -367,6 +346,7 @@ async function predictCameraFrame(timestamp) {
     predictionInFlight = false;
   }
 }
+
 
 function handlePrediction(result) {
   if (result.status === "model_unavailable" || result.status === "service_unavailable") {
