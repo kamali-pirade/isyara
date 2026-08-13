@@ -13,3 +13,9 @@ datasets/bisindo/**/*
 services/assessment_service/assessment_service/models/*.pt
 services/assessment_service/assessment_service/models/*.pth
 .env
+/RuangIsyarat-6
+/RuangIsyarat-6/data.yml
+/RuangIsyarat-6/.txt
+train.py
+**/unified_alphabet_words_v11
+test_model.py
